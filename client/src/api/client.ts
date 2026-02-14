@@ -130,6 +130,69 @@ export async function addToPortfolio(assessmentIds: number[]): Promise<Portfolio
   return data;
 }
 
+export function batchAddToPortfolio(
+  params: { assessment_ids?: number[]; new_companies?: string[]; sector?: string },
+  callbacks: {
+    onExistingAdded?: (data: { count: number }) => void;
+    onBatchStart?: (data: { total: number }) => void;
+    onCompanyStart?: (data: { index: number; company_name: string }) => void;
+    onProgress?: (data: { index: number; company_name: string; message: string }) => void;
+    onCompanyComplete?: (data: { index: number; company_name: string; assessment_id: number }) => void;
+    onCompanyError?: (data: { index: number; company_name: string; error: string }) => void;
+    onComplete?: () => void;
+    onError?: (msg: string) => void;
+  },
+): () => void {
+  const controller = new AbortController();
+
+  fetch('/api/portfolio/batch-add', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+    signal: controller.signal,
+  }).then(async (response) => {
+    const reader = response.body?.getReader();
+    if (!reader) { callbacks.onError?.('No response body'); return; }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      let event = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          event = line.slice(7);
+        } else if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            switch (event) {
+              case 'existing_added': callbacks.onExistingAdded?.(data); break;
+              case 'batch_start': callbacks.onBatchStart?.(data); break;
+              case 'company_start': callbacks.onCompanyStart?.(data); break;
+              case 'progress': callbacks.onProgress?.(data); break;
+              case 'company_complete': callbacks.onCompanyComplete?.(data); break;
+              case 'company_error': callbacks.onCompanyError?.(data); break;
+              case 'complete': callbacks.onComplete?.(); break;
+              case 'error': callbacks.onError?.(data.message); break;
+            }
+          } catch {}
+        }
+      }
+    }
+  }).catch((err) => {
+    if (err.name !== 'AbortError') callbacks.onError?.(err.message);
+  });
+
+  return () => controller.abort();
+}
+
 export async function removeFromPortfolio(id: number): Promise<void> {
   await api.delete(`/portfolio/${id}`);
 }

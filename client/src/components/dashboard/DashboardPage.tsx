@@ -7,8 +7,9 @@ import { AddToPortfolioModal } from './AddToPortfolioModal';
 import { FilterBar } from './FilterBar';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { useDashboardStats, useRiskDistribution, useDomainBreakdown, useSectorBreakdown } from '../../hooks/useDashboard';
-import { usePortfolio, useAddToPortfolio, useRemoveFromPortfolio, useUpdatePortfolioWeights } from '../../hooks/usePortfolio';
+import { usePortfolio, useRemoveFromPortfolio, useUpdatePortfolioWeights } from '../../hooks/usePortfolio';
 import { useAssessments } from '../../hooks/useAssessments';
+import { useQueryClient } from '@tanstack/react-query';
 
 export function DashboardPage() {
   const [search, setSearch] = useState('');
@@ -21,9 +22,9 @@ export function DashboardPage() {
   const riskDist = useRiskDistribution();
   const domainBreakdown = useDomainBreakdown();
   const sectorBreakdown = useSectorBreakdown();
+  const queryClient = useQueryClient();
   const portfolio = usePortfolio();
   const allAssessments = useAssessments({});
-  const addToPortfolio = useAddToPortfolio();
   const removeFromPortfolio = useRemoveFromPortfolio();
   const updateWeights = useUpdatePortfolioWeights();
 
@@ -111,13 +112,13 @@ export function DashboardPage() {
         <AddToPortfolioModal
           assessments={allAssessments.data || []}
           portfolioAssessmentIds={portfolioAssessmentIds}
-          onAdd={(ids) => {
-            addToPortfolio.mutate(ids, {
-              onSuccess: () => setShowAddModal(false),
-            });
+          onComplete={() => {
+            queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+            queryClient.invalidateQueries({ queryKey: ['assessments'] });
+            setShowAddModal(false);
           }}
           onClose={() => setShowAddModal(false)}
-          isAdding={addToPortfolio.isPending}
         />
       )}
     </>
