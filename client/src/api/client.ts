@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Assessment, BatchCompanyResult, DashboardStats, RiskDistribution, DomainBreakdown, SectorBreakdown, AssessmentHistory } from '../types';
+import type { Assessment, DashboardStats, RiskDistribution, DomainBreakdown, SectorBreakdown, AssessmentHistory, PortfolioEntry } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -98,69 +98,6 @@ export function startAnalysis(
   return () => controller.abort();
 }
 
-// Batch Analysis (SSE)
-export function startBatchAnalysis(
-  companies: string[],
-  sector: string | undefined,
-  callbacks: {
-    onBatchStart: (data: { total: number }) => void;
-    onCompanyStart: (data: { index: number; company_name: string }) => void;
-    onProgress: (data: { index: number; company_name: string; message: string }) => void;
-    onCompanyComplete: (data: BatchCompanyResult & { index: number }) => void;
-    onCompanyError: (data: BatchCompanyResult & { index: number }) => void;
-    onBatchComplete: (data: { results: BatchCompanyResult[] }) => void;
-    onError: (msg: string) => void;
-  },
-): () => void {
-  const controller = new AbortController();
-
-  fetch('/api/batch-analysis', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ companies, sector }),
-    signal: controller.signal,
-  }).then(async (response) => {
-    const reader = response.body?.getReader();
-    if (!reader) { callbacks.onError('No response body'); return; }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      let event = '';
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          event = line.slice(7);
-        } else if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            switch (event) {
-              case 'batch_start': callbacks.onBatchStart(data); break;
-              case 'company_start': callbacks.onCompanyStart(data); break;
-              case 'progress': callbacks.onProgress(data); break;
-              case 'company_complete': callbacks.onCompanyComplete(data); break;
-              case 'company_error': callbacks.onCompanyError(data); break;
-              case 'batch_complete': callbacks.onBatchComplete(data); break;
-              case 'error': callbacks.onError(data.message); break;
-            }
-          } catch {}
-        }
-      }
-    }
-  }).catch((err) => {
-    if (err.name !== 'AbortError') callbacks.onError(err.message);
-  });
-
-  return () => controller.abort();
-}
-
 // Dashboard
 export async function getDashboardStats(): Promise<DashboardStats> {
   const { data } = await api.get('/dashboard/stats');
@@ -180,6 +117,25 @@ export async function getDomainBreakdown(): Promise<DomainBreakdown[]> {
 export async function getSectorBreakdown(): Promise<SectorBreakdown[]> {
   const { data } = await api.get('/dashboard/sector-breakdown');
   return data;
+}
+
+// Portfolio
+export async function getPortfolio(): Promise<PortfolioEntry[]> {
+  const { data } = await api.get('/portfolio');
+  return data;
+}
+
+export async function addToPortfolio(assessmentIds: number[]): Promise<PortfolioEntry[]> {
+  const { data } = await api.post('/portfolio', { assessment_ids: assessmentIds });
+  return data;
+}
+
+export async function removeFromPortfolio(id: number): Promise<void> {
+  await api.delete(`/portfolio/${id}`);
+}
+
+export async function updatePortfolioWeights(weights: { id: number; weight: number }[]): Promise<void> {
+  await api.put('/portfolio/weights', { weights });
 }
 
 // History

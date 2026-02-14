@@ -6,8 +6,8 @@ interface Props {
   onSearchChange: (v: string) => void;
   sector: string;
   onSectorChange: (v: string) => void;
-  status: string;
-  onStatusChange: (v: string) => void;
+  status?: string;
+  onStatusChange?: (v: string) => void;
 }
 
 const SECTORS = [
@@ -36,13 +36,15 @@ export function FilterBar({ search, onSearchChange, sector, onSectorChange, stat
         {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
 
-      <select className="form-select" value={status} onChange={e => onStatusChange(e.target.value)}>
-        <option value="all">All Status</option>
-        <option value="completed">Completed</option>
-        <option value="analyzing">Analyzing</option>
-        <option value="pending">Pending</option>
-        <option value="error">Error</option>
-      </select>
+      {onStatusChange && (
+        <select className="form-select" value={status || 'all'} onChange={e => onStatusChange(e.target.value)}>
+          <option value="all">All Status</option>
+          <option value="completed">Completed</option>
+          <option value="analyzing">Analyzing</option>
+          <option value="pending">Pending</option>
+          <option value="error">Error</option>
+        </select>
+      )}
     </div>
   );
 }

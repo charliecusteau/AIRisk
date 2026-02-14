@@ -2,24 +2,30 @@ import React, { useState } from 'react';
 import { Header } from '../layout/Header';
 import { StatsCards } from './StatsCards';
 import { RiskDonutChart, DomainBreakdownChart, SectorBreakdownChart } from './Charts';
-import { CompanyTable } from './CompanyTable';
+import { PortfolioTable } from './PortfolioTable';
+import { AddToPortfolioModal } from './AddToPortfolioModal';
 import { FilterBar } from './FilterBar';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { useDashboardStats, useRiskDistribution, useDomainBreakdown, useSectorBreakdown } from '../../hooks/useDashboard';
+import { usePortfolio, useAddToPortfolio, useRemoveFromPortfolio, useUpdatePortfolioWeights } from '../../hooks/usePortfolio';
 import { useAssessments } from '../../hooks/useAssessments';
 
 export function DashboardPage() {
   const [search, setSearch] = useState('');
   const [sector, setSector] = useState('all');
-  const [status, setStatus] = useState('all');
   const [sort, setSort] = useState('date');
   const [order, setOrder] = useState('desc');
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const stats = useDashboardStats();
   const riskDist = useRiskDistribution();
   const domainBreakdown = useDomainBreakdown();
   const sectorBreakdown = useSectorBreakdown();
-  const assessments = useAssessments({ search: search || undefined, sector, status, sort, order });
+  const portfolio = usePortfolio();
+  const allAssessments = useAssessments({});
+  const addToPortfolio = useAddToPortfolio();
+  const removeFromPortfolio = useRemoveFromPortfolio();
+  const updateWeights = useUpdatePortfolioWeights();
 
   const handleSort = (field: string) => {
     if (sort === field) {
@@ -30,9 +36,30 @@ export function DashboardPage() {
     }
   };
 
+  const portfolioAssessmentIds = new Set((portfolio.data || []).map(e => e.assessment_id));
+
+  // Filter portfolio entries client-side by search/sector
+  let filteredEntries = portfolio.data || [];
+  if (search) {
+    const q = search.toLowerCase();
+    filteredEntries = filteredEntries.filter(e => e.company_name.toLowerCase().includes(q));
+  }
+  if (sector && sector !== 'all') {
+    filteredEntries = filteredEntries.filter(e => e.company_sector === sector);
+  }
+
+  // Sort client-side
+  filteredEntries = [...filteredEntries].sort((a, b) => {
+    let cmp = 0;
+    if (sort === 'name') cmp = a.company_name.localeCompare(b.company_name);
+    else if (sort === 'score') cmp = (a.composite_score || 0) - (b.composite_score || 0);
+    else cmp = a.updated_at.localeCompare(b.updated_at);
+    return order === 'asc' ? cmp : -cmp;
+  });
+
   return (
     <>
-      <Header title="Dashboard" />
+      <Header title="Portfolio Dashboard" />
       <div className="page-content">
         {stats.isLoading ? (
           <LoadingSpinner size="lg" message="Loading dashboard..." />
@@ -48,26 +75,28 @@ export function DashboardPage() {
 
             <div style={{ marginBottom: 12 }}>
               <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-heading)', marginBottom: 14 }}>
-                All Assessments
+                Portfolio Holdings
               </h3>
               <FilterBar
                 search={search}
                 onSearchChange={setSearch}
                 sector={sector}
                 onSectorChange={setSector}
-                status={status}
-                onStatusChange={setStatus}
               />
             </div>
 
-            {assessments.isLoading ? (
-              <LoadingSpinner message="Loading assessments..." />
+            {portfolio.isLoading ? (
+              <LoadingSpinner message="Loading portfolio..." />
             ) : (
-              <CompanyTable
-                assessments={assessments.data || []}
+              <PortfolioTable
+                entries={filteredEntries}
                 sort={sort}
                 order={order}
                 onSort={handleSort}
+                onRemove={(id) => removeFromPortfolio.mutate(id)}
+                onSaveWeights={(weights) => updateWeights.mutate(weights)}
+                onAddCompanies={() => setShowAddModal(true)}
+                isSavingWeights={updateWeights.isPending}
               />
             )}
           </>
@@ -77,6 +106,20 @@ export function DashboardPage() {
           </div>
         )}
       </div>
+
+      {showAddModal && (
+        <AddToPortfolioModal
+          assessments={allAssessments.data || []}
+          portfolioAssessmentIds={portfolioAssessmentIds}
+          onAdd={(ids) => {
+            addToPortfolio.mutate(ids, {
+              onSuccess: () => setShowAddModal(false),
+            });
+          }}
+          onClose={() => setShowAddModal(false)}
+          isAdding={addToPortfolio.isPending}
+        />
+      )}
     </>
   );
 }

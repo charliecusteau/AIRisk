@@ -65,10 +65,21 @@ export function initSchema(db: SqlJsDatabase): void {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS portfolio (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      assessment_id INTEGER NOT NULL UNIQUE,
+      weight REAL NOT NULL DEFAULT 0,
+      added_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE
+    )
+  `);
+
   db.run('CREATE INDEX IF NOT EXISTS idx_assessments_company_id ON assessments(company_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_assessments_status ON assessments(status)');
   db.run('CREATE INDEX IF NOT EXISTS idx_domain_scores_assessment_id ON domain_scores(assessment_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_assessment_history_assessment_id ON assessment_history(assessment_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_portfolio_assessment_id ON portfolio(assessment_id)');
 
   // Migration: add domain_summaries column to existing databases
   try {

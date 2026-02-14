@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, PlusCircle, Layers, GitCompare, History, Radar } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, GitCompare, Radar } from 'lucide-react';
 
 export function Sidebar() {
   return (
@@ -16,19 +16,11 @@ export function Sidebar() {
         </NavLink>
         <NavLink to="/new" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
           <PlusCircle size={18} />
-          New Assessment
-        </NavLink>
-        <NavLink to="/batch" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-          <Layers size={18} />
-          Batch Analysis
+          New Company Review
         </NavLink>
         <NavLink to="/compare" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
           <GitCompare size={18} />
           Compare
-        </NavLink>
-        <NavLink to="/history" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-          <History size={18} />
-          History
         </NavLink>
       </nav>
     </aside>

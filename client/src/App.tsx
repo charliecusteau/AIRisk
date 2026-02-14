@@ -6,8 +6,6 @@ import { DashboardPage } from './components/dashboard/DashboardPage';
 import { NewAssessmentPage } from './components/assessment/NewAssessmentPage';
 import { AssessmentDetailPage } from './components/assessment/AssessmentDetailPage';
 import { ComparisonPage } from './components/comparison/ComparisonPage';
-import { HistoryPage } from './components/history/HistoryPage';
-import { BatchAnalysisPage } from './components/assessment/BatchAnalysisPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,8 +28,6 @@ export default function App() {
               <Route path="/new" element={<NewAssessmentPage />} />
               <Route path="/assessment/:id" element={<AssessmentDetailPage />} />
               <Route path="/compare" element={<ComparisonPage />} />
-              <Route path="/history" element={<HistoryPage />} />
-              <Route path="/batch" element={<BatchAnalysisPage />} />
             </Routes>
           </main>
         </div>

@@ -87,6 +87,22 @@ export interface BatchCompanyResult {
   error?: string;
 }
 
+export interface PortfolioEntry {
+  id: number;
+  assessment_id: number;
+  weight: number;
+  added_at: string;
+  company_name: string;
+  company_sector: string | null;
+  composite_score: number | null;
+  composite_rating: CompositeRating | null;
+  domain1_rating: RiskRating | null;
+  domain2_rating: RiskRating | null;
+  domain3_rating: RiskRating | null;
+  domain4_rating: RiskRating | null;
+  updated_at: string;
+}
+
 export interface DomainDefinition {
   number: number;
   name: string;

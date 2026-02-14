@@ -44,7 +44,7 @@ export function NewAssessmentPage() {
 
   return (
     <>
-      <Header title="New Assessment" />
+      <Header title="New Company Review" />
       <div className="page-content">
         {analyzing ? (
           <AnalysisProgress message={progressMsg} companyName={companyName} />
