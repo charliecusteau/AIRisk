@@ -41,10 +41,15 @@ async function main() {
 
   // Serve client static files in production
   const clientDistPath = path.join(__dirname, '../../client/dist');
+  logger.info(`Looking for client files at: ${clientDistPath} (exists: ${fs.existsSync(clientDistPath)})`);
   if (fs.existsSync(clientDistPath)) {
     app.use(express.static(clientDistPath));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(clientDistPath, 'index.html'));
+    });
+  } else {
+    app.get('/', (_req, res) => {
+      res.json({ status: 'API is running', client: 'Client files not found. Build may have failed.' });
     });
   }
 
