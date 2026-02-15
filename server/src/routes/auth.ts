@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import Anthropic from '@anthropic-ai/sdk';
 import { get, all, run } from '../db/helpers';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { logger } from '../utils/logger';
@@ -127,6 +128,44 @@ router.delete('/users/:id', requireAdmin, (req: Request, res: Response) => {
   run('DELETE FROM users WHERE id = ?', targetId);
   logger.info('User deleted', { id: targetId });
   res.json({ success: true });
+});
+
+// POST /api/auth/backfill-descriptions — admin: fill missing company descriptions via Claude
+router.post('/backfill-descriptions', requireAdmin, async (req: Request, res: Response) => {
+  const companies = all<{ id: number; name: string; sector: string | null }>(
+    "SELECT DISTINCT c.id, c.name, c.sector FROM companies c WHERE c.description IS NULL OR c.description = ''"
+  );
+
+  if (companies.length === 0) {
+    res.json({ updated: 0, message: 'All companies already have descriptions' });
+    return;
+  }
+
+  const client = new Anthropic();
+  let updated = 0;
+
+  for (const company of companies) {
+    try {
+      const msg = await client.messages.create({
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 200,
+        messages: [{
+          role: 'user',
+          content: `In 1-2 sentences, describe what ${company.name} does as a business${company.sector ? ` (sector: ${company.sector})` : ''}. Be specific about their core product/service. Return ONLY the description text, no quotes or prefixes.`,
+        }],
+      });
+      const text = msg.content.find(b => b.type === 'text');
+      if (text && text.type === 'text') {
+        run("UPDATE companies SET description = ?, updated_at = datetime('now') WHERE id = ?",
+          text.text.trim(), company.id);
+        updated++;
+      }
+    } catch (err: any) {
+      logger.error(`Backfill description failed for ${company.name}`, err);
+    }
+  }
+
+  res.json({ updated, total: companies.length });
 });
 
 export default router;
