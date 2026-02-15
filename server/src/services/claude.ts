@@ -30,6 +30,7 @@ const domainResultSchema = z.object({
 const analysisResultSchema = z.object({
   company_name: z.string(),
   sector: z.string(),
+  company_description: z.string(),
   domains: z.array(domainResultSchema).length(4),
   narrative: z.string(),
   composite_score: z.number().min(1).max(10),
@@ -77,6 +78,7 @@ Respond with this exact JSON structure:
 {
   "company_name": "${companyName}",
   "sector": "<identified or provided sector>",
+  "company_description": "<1-2 sentence description of what the company does and its core product/service>",
   "domains": [
     {
       "domain_number": 1,

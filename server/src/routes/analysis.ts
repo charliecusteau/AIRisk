@@ -114,10 +114,10 @@ router.post('/', async (req: Request, res: Response) => {
 
     sendEvent('progress', { message: 'Saving results...', step: 3, totalSteps: 5 });
 
-    // Update company sector if identified
-    if (result.sector) {
-      run("UPDATE companies SET sector = ?, updated_at = datetime('now') WHERE id = ?",
-        result.sector, assessment.company_id);
+    // Update company sector and description
+    if (result.sector || result.company_description) {
+      run("UPDATE companies SET sector = COALESCE(?, sector), description = COALESCE(?, description), updated_at = datetime('now') WHERE id = ?",
+        result.sector || null, result.company_description || null, assessment.company_id);
     }
 
     // Clear any existing scores for re-analysis

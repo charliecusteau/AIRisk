@@ -92,6 +92,7 @@ export interface ClaudeDomainResult {
 export interface ClaudeAnalysisResult {
   company_name: string;
   sector: string;
+  company_description: string;
   domains: ClaudeDomainResult[];
   narrative: string;
   composite_score: number;

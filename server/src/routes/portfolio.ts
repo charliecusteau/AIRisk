@@ -205,9 +205,9 @@ router.post('/batch-add', async (req: Request, res: Response) => {
             (message) => sendEvent('progress', { index: i, company_name: companyName, message }),
           );
 
-          if (result.sector) {
-            run("UPDATE companies SET sector = ?, updated_at = datetime('now') WHERE id = ?",
-              result.sector, company.id);
+          if (result.sector || result.company_description) {
+            run("UPDATE companies SET sector = COALESCE(?, sector), description = COALESCE(?, description), updated_at = datetime('now') WHERE id = ?",
+              result.sector || null, result.company_description || null, company.id);
           }
 
           run('DELETE FROM domain_scores WHERE assessment_id = ?', assessmentId);
