@@ -115,16 +115,34 @@ export async function analyzeCompany(
   onProgress?.('Sending request to Claude...');
   logger.info('Starting Claude analysis', { companyName, sector });
 
-  const message = await getClient().messages.create({
-    model: 'claude-sonnet-4-5-20250929',
-    max_tokens: 8192,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
+  let message: any = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      message = await getClient().messages.create({
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 8192,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userPrompt }],
+      });
+      break;
+    } catch (err: any) {
+      if (err?.status === 429 && attempt < 2) {
+        const wait = (attempt + 1) * 30;
+        onProgress?.(`Rate limited — waiting ${wait}s before retry...`);
+        await new Promise(resolve => setTimeout(resolve, wait * 1000));
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  if (!message) {
+    throw new Error('Failed after retries — rate limit exceeded');
+  }
 
   onProgress?.('Parsing AI response...');
 
-  const textBlock = message.content.find(b => b.type === 'text');
+  const textBlock = message.content.find((b: any) => b.type === 'text');
   if (!textBlock || textBlock.type !== 'text') {
     throw new Error('No text response from Claude');
   }
