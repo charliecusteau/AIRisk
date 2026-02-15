@@ -172,7 +172,7 @@ export function AddToPortfolioModal({ assessments, portfolioAssessmentIds, onCom
         {/* New companies textarea */}
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-heading)', marginBottom: 6 }}>
-            New Companies (one per line, max 50)
+            New Companies (one per line, max 75)
           </label>
           <textarea
             className="form-input"
@@ -182,9 +182,9 @@ export function AddToPortfolioModal({ assessments, portfolioAssessmentIds, onCom
             onChange={e => setNewCompanies(e.target.value)}
           />
           {newList.length > 0 && (
-            <div style={{ fontSize: 11, color: newList.length > 50 ? 'var(--risk-high)' : 'var(--text-muted)', marginTop: 4 }}>
+            <div style={{ fontSize: 11, color: newList.length > 75 ? 'var(--risk-high)' : 'var(--text-muted)', marginTop: 4 }}>
               {newList.length} company name{newList.length !== 1 ? 's' : ''} entered
-              {newList.length > 50 && ' (only first 50 will be processed)'}
+              {newList.length > 75 && ' (only first 75 will be processed)'}
             </div>
           )}
         </div>
