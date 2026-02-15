@@ -12,8 +12,8 @@ router.get('/:id/pdf', (req: Request, res: Response) => {
   const { id } = req.params;
   const userId = req.session.userId;
 
-  const assessment = get<Assessment & { company_name: string; company_sector: string }>(`
-    SELECT a.*, c.name as company_name, c.sector as company_sector
+  const assessment = get<Assessment & { company_name: string; company_sector: string; company_description: string | null }>(`
+    SELECT a.*, c.name as company_name, c.sector as company_sector, c.description as company_description
     FROM assessments a
     JOIN companies c ON a.company_id = c.id
     WHERE a.id = ? AND a.status = 'completed' AND a.user_id = ?

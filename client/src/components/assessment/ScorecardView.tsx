@@ -66,6 +66,11 @@ export function ScorecardView({ assessment, onDeleted, onToast }: Props) {
                   <span style={{ fontSize: 11, color: 'var(--accent-blue)' }}>Modified</span>
                 )}
               </div>
+              {assessment.company_description && (
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.6 }}>
+                  {assessment.company_description}
+                </p>
+              )}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>

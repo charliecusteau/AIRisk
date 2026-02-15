@@ -72,6 +72,7 @@ export interface DashboardStats {
 export interface RiskDistribution {
   rating: string;
   count: number;
+  weight: number;
   companies: string[];
 }
 

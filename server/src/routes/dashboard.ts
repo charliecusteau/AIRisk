@@ -58,7 +58,7 @@ router.get('/risk-distribution', (req: Request, res: Response) => {
   const userId = req.session.userId;
 
   const data = all(`
-    SELECT a.composite_rating as rating, COUNT(*) as count
+    SELECT a.composite_rating as rating, ROUND(SUM(p.weight), 1) as weight, COUNT(*) as count
     FROM portfolio p
     JOIN assessments a ON p.assessment_id = a.id
     WHERE a.status = 'completed' AND a.composite_rating IS NOT NULL AND p.user_id = ?

@@ -19,7 +19,7 @@ function ratingLabel(rating: string): string {
 }
 
 export function generateHtmlReport(
-  assessment: Assessment & { company_name: string; company_sector: string },
+  assessment: Assessment & { company_name: string; company_sector: string; company_description?: string | null },
   domainScores: DomainScore[],
   domains: DomainDefinition[],
 ): string {
@@ -90,6 +90,12 @@ export function generateHtmlReport(
       ${assessment.user_modified ? ' &nbsp;|&nbsp; <em>User Modified</em>' : ''}
     </div>
   </div>
+
+  <!-- Business Description -->
+  ${assessment.company_description ? `
+  <div style="margin-bottom: 10px;">
+    <div style="font-size: 10px; color: #374151; line-height: 1.35; background: #f8fafc; padding: 6px 8px; border-left: 3px solid #94a3b8;">${assessment.company_description}</div>
+  </div>` : ''}
 
   <!-- Executive Summary -->
   ${assessment.narrative ? `
