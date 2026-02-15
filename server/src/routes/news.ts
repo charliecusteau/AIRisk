@@ -118,7 +118,7 @@ router.post('/scan', async (req: Request, res: Response) => {
     });
 
     const portfolioContext = portfolio.map((p: any) =>
-      `- ${p.name} (Sector: ${p.sector || 'Unknown'}, Risk Rating: ${p.composite_rating || 'N/A'}, Score: ${p.composite_score || 'N/A'})`,
+      `- ${p.name} (${p.sector || 'Unknown'})`,
     ).join('\n');
 
     const companyNames = portfolio.map((p: any) => p.name);
@@ -171,18 +171,38 @@ Return this exact JSON structure:
 
     sendEvent('progress', { message: 'Searching for recent AI competitive news...' });
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 8000,
-      tools: [{ type: 'web_search_20250305' as any, name: 'web_search', max_uses: 15 } as any],
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: `Search for AI competitive news published since ${searchSince} that could impact these portfolio companies: ${companyNames.join(', ')}. Return the structured JSON as instructed.`,
-        },
-      ],
-    });
+    let response: Anthropic.Message | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        response = await client.messages.create({
+          model: 'claude-sonnet-4-5-20250929',
+          max_tokens: 8000,
+          tools: [{ type: 'web_search_20250305' as any, name: 'web_search', max_uses: 10 } as any],
+          system: systemPrompt,
+          messages: [
+            {
+              role: 'user',
+              content: `Search for AI competitive news published since ${searchSince} that could impact these portfolio companies: ${companyNames.join(', ')}. Return the structured JSON as instructed.`,
+            },
+          ],
+        });
+        break;
+      } catch (err: any) {
+        if (err?.status === 429 && attempt < 2) {
+          const wait = (attempt + 1) * 30;
+          sendEvent('progress', { message: `Rate limited — waiting ${wait}s before retry...` });
+          await new Promise(resolve => setTimeout(resolve, wait * 1000));
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    if (!response) {
+      sendEvent('error', { message: 'Failed after retries. Please try again later.' });
+      res.end();
+      return;
+    }
 
     sendEvent('progress', { message: 'Processing search results...' });
 
