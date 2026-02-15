@@ -4,15 +4,17 @@ import { DOMAINS } from '../utils/constants';
 
 const router = Router();
 
-// GET /api/dashboard/stats — portfolio-weighted
-router.get('/stats', (_req: Request, res: Response) => {
+// GET /api/dashboard/stats — portfolio-weighted, scoped by user
+router.get('/stats', (req: Request, res: Response) => {
+  const userId = req.session.userId;
+
   const totalCompanies = get<any>(`
     SELECT COUNT(*) as count FROM portfolio p
     JOIN assessments a ON p.assessment_id = a.id
-    WHERE a.status = 'completed'
-  `)?.count || 0;
+    WHERE a.status = 'completed' AND p.user_id = ?
+  `, userId)?.count || 0;
 
-  const totalWeight = get<any>('SELECT SUM(weight) as total FROM portfolio')?.total || 0;
+  const totalWeight = get<any>('SELECT SUM(weight) as total FROM portfolio WHERE user_id = ?', userId)?.total || 0;
 
   const avgScore = get<any>(`
     SELECT CASE WHEN SUM(p.weight) > 0
@@ -20,26 +22,26 @@ router.get('/stats', (_req: Request, res: Response) => {
       ELSE 0 END as avg
     FROM portfolio p
     JOIN assessments a ON p.assessment_id = a.id
-    WHERE a.status = 'completed'
-  `)?.avg || 0;
+    WHERE a.status = 'completed' AND p.user_id = ?
+  `, userId)?.avg || 0;
 
   const highRisk = get<any>(`
     SELECT COALESCE(SUM(p.weight), 0) as total_weight FROM portfolio p
     JOIN assessments a ON p.assessment_id = a.id
-    WHERE a.status = 'completed' AND a.composite_rating IN ('High Risk', 'Medium-High Risk')
-  `)?.total_weight || 0;
+    WHERE a.status = 'completed' AND a.composite_rating IN ('High Risk', 'Medium-High Risk') AND p.user_id = ?
+  `, userId)?.total_weight || 0;
 
   const mediumRisk = get<any>(`
     SELECT COALESCE(SUM(p.weight), 0) as total_weight FROM portfolio p
     JOIN assessments a ON p.assessment_id = a.id
-    WHERE a.status = 'completed' AND a.composite_rating = 'Medium Risk'
-  `)?.total_weight || 0;
+    WHERE a.status = 'completed' AND a.composite_rating = 'Medium Risk' AND p.user_id = ?
+  `, userId)?.total_weight || 0;
 
   const lowRisk = get<any>(`
     SELECT COALESCE(SUM(p.weight), 0) as total_weight FROM portfolio p
     JOIN assessments a ON p.assessment_id = a.id
-    WHERE a.status = 'completed' AND a.composite_rating IN ('Low Risk', 'Medium-Low Risk')
-  `)?.total_weight || 0;
+    WHERE a.status = 'completed' AND a.composite_rating IN ('Low Risk', 'Medium-Low Risk') AND p.user_id = ?
+  `, userId)?.total_weight || 0;
 
   res.json({
     total_companies: totalCompanies,
@@ -51,13 +53,15 @@ router.get('/stats', (_req: Request, res: Response) => {
   });
 });
 
-// GET /api/dashboard/risk-distribution — portfolio only
-router.get('/risk-distribution', (_req: Request, res: Response) => {
+// GET /api/dashboard/risk-distribution — portfolio only, scoped by user
+router.get('/risk-distribution', (req: Request, res: Response) => {
+  const userId = req.session.userId;
+
   const data = all(`
     SELECT a.composite_rating as rating, COUNT(*) as count
     FROM portfolio p
     JOIN assessments a ON p.assessment_id = a.id
-    WHERE a.status = 'completed' AND a.composite_rating IS NOT NULL
+    WHERE a.status = 'completed' AND a.composite_rating IS NOT NULL AND p.user_id = ?
     GROUP BY a.composite_rating
     ORDER BY
       CASE a.composite_rating
@@ -67,34 +71,51 @@ router.get('/risk-distribution', (_req: Request, res: Response) => {
         WHEN 'Medium-Low Risk' THEN 4
         WHEN 'Low Risk' THEN 5
       END
-  `);
+  `, userId);
 
-  res.json(data);
+  // Add company names per rating category
+  const withCompanies = data.map((row: any) => {
+    const companies = all(`
+      SELECT c.name FROM portfolio p
+      JOIN assessments a ON p.assessment_id = a.id
+      JOIN companies c ON a.company_id = c.id
+      WHERE a.status = 'completed' AND a.composite_rating = ? AND p.user_id = ?
+      ORDER BY c.name
+    `, row.rating, userId);
+    return { ...row, companies: companies.map((c: any) => c.name) };
+  });
+
+  res.json(withCompanies);
 });
 
-// GET /api/dashboard/domain-breakdown — portfolio only
-router.get('/domain-breakdown', (_req: Request, res: Response) => {
+// GET /api/dashboard/domain-breakdown — portfolio only, scoped by user
+router.get('/domain-breakdown', (req: Request, res: Response) => {
+  const userId = req.session.userId;
+
   const breakdown = DOMAINS.map(domain => {
     const high = get<any>(`
       SELECT COUNT(DISTINCT ds.assessment_id) as count FROM domain_scores ds
       JOIN portfolio p ON ds.assessment_id = p.assessment_id
       WHERE ds.domain_number = ? AND ds.effective_rating = 'high'
       AND ds.assessment_id IN (SELECT id FROM assessments WHERE status = 'completed')
-    `, domain.number)?.count || 0;
+      AND p.user_id = ?
+    `, domain.number, userId)?.count || 0;
 
     const medium = get<any>(`
       SELECT COUNT(DISTINCT ds.assessment_id) as count FROM domain_scores ds
       JOIN portfolio p ON ds.assessment_id = p.assessment_id
       WHERE ds.domain_number = ? AND ds.effective_rating = 'medium'
       AND ds.assessment_id IN (SELECT id FROM assessments WHERE status = 'completed')
-    `, domain.number)?.count || 0;
+      AND p.user_id = ?
+    `, domain.number, userId)?.count || 0;
 
     const low = get<any>(`
       SELECT COUNT(DISTINCT ds.assessment_id) as count FROM domain_scores ds
       JOIN portfolio p ON ds.assessment_id = p.assessment_id
       WHERE ds.domain_number = ? AND ds.effective_rating = 'low'
       AND ds.assessment_id IN (SELECT id FROM assessments WHERE status = 'completed')
-    `, domain.number)?.count || 0;
+      AND p.user_id = ?
+    `, domain.number, userId)?.count || 0;
 
     return { domain: domain.name, high, medium, low };
   });
@@ -102,17 +123,19 @@ router.get('/domain-breakdown', (_req: Request, res: Response) => {
   res.json(breakdown);
 });
 
-// GET /api/dashboard/sector-breakdown — portfolio only
-router.get('/sector-breakdown', (_req: Request, res: Response) => {
+// GET /api/dashboard/sector-breakdown — portfolio only, scoped by user
+router.get('/sector-breakdown', (req: Request, res: Response) => {
+  const userId = req.session.userId;
+
   const data = all(`
     SELECT c.sector, AVG(a.composite_score) as avg_score, COUNT(*) as count
     FROM portfolio p
     JOIN assessments a ON p.assessment_id = a.id
     JOIN companies c ON a.company_id = c.id
-    WHERE a.status = 'completed' AND c.sector IS NOT NULL AND c.sector != ''
+    WHERE a.status = 'completed' AND c.sector IS NOT NULL AND c.sector != '' AND p.user_id = ?
     GROUP BY c.sector
     ORDER BY avg_score DESC
-  `);
+  `, userId);
 
   res.json(data);
 });

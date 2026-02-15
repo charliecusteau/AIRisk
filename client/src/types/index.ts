@@ -1,3 +1,12 @@
+export interface User {
+  id: number;
+  username: string;
+  name: string;
+  role: 'admin' | 'user';
+  last_login_at: string | null;
+  created_at: string;
+}
+
 export type RiskRating = 'high' | 'medium' | 'low';
 export type CompositeRating = 'High Risk' | 'Medium-High Risk' | 'Medium Risk' | 'Medium-Low Risk' | 'Low Risk';
 export type AssessmentStatus = 'pending' | 'analyzing' | 'completed' | 'error';
@@ -63,6 +72,7 @@ export interface DashboardStats {
 export interface RiskDistribution {
   rating: string;
   count: number;
+  companies: string[];
 }
 
 export interface DomainBreakdown {
@@ -108,4 +118,30 @@ export interface DomainDefinition {
   name: string;
   description: string;
   questions: { key: string; text: string; guidance: string }[];
+}
+
+export interface NewsAlert {
+  id: number;
+  headline: string;
+  source: string | null;
+  source_url: string | null;
+  published_date: string | null;
+  summary: string;
+  competitor: string | null;
+  competitor_type: 'foundation_lab' | 'ai_native' | 'incumbent' | null;
+  relevance_score: number;
+  scanned_at: string;
+  impacts: NewsAlertImpact[];
+}
+
+export interface NewsAlertImpact {
+  portfolio_id: number;
+  company_name: string;
+  impact_explanation: string;
+}
+
+export interface NewsStatus {
+  last_scanned_at: string | null;
+  alert_count: number;
+  is_stale: boolean;
 }

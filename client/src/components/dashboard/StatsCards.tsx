@@ -13,10 +13,6 @@ export function StatsCards({ stats }: Props) {
         <div className="stat-value">{stats.total_companies}</div>
       </div>
       <div className="stat-card">
-        <div className="stat-label">Portfolio Weight</div>
-        <div className="stat-value">{stats.total_assessments}%</div>
-      </div>
-      <div className="stat-card">
         <div className="stat-label">Wtd Avg Risk Score</div>
         <div className="stat-value" style={{
           color: stats.avg_composite_score <= 3.5 ? 'var(--risk-low)' :

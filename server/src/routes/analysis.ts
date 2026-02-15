@@ -16,13 +16,14 @@ const analyzeSchema = z.object({
 // POST /api/analysis - trigger analysis and stream progress via SSE
 router.post('/', async (req: Request, res: Response) => {
   const { assessment_id } = analyzeSchema.parse(req.body);
+  const userId = req.session.userId;
 
   const assessment = get<any>(`
     SELECT a.*, c.name as company_name, c.sector as company_sector, c.description as company_description
     FROM assessments a
     JOIN companies c ON a.company_id = c.id
-    WHERE a.id = ?
-  `, assessment_id);
+    WHERE a.id = ? AND a.user_id = ?
+  `, assessment_id, userId);
 
   if (!assessment) {
     res.status(404).json({ error: 'Assessment not found' });

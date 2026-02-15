@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Header } from '../layout/Header';
 import { StatsCards } from './StatsCards';
-import { RiskDonutChart, DomainBreakdownChart, SectorBreakdownChart } from './Charts';
+import { RiskDonutChart, SectorBreakdownChart } from './Charts';
 import { PortfolioTable } from './PortfolioTable';
 import { AddToPortfolioModal } from './AddToPortfolioModal';
+import { EditWeightsModal } from './EditWeightsModal';
 import { FilterBar } from './FilterBar';
 import { LoadingSpinner } from '../common/LoadingSpinner';
-import { useDashboardStats, useRiskDistribution, useDomainBreakdown, useSectorBreakdown } from '../../hooks/useDashboard';
+import { useDashboardStats, useRiskDistribution, useSectorBreakdown } from '../../hooks/useDashboard';
 import { usePortfolio, useRemoveFromPortfolio, useUpdatePortfolioWeights } from '../../hooks/usePortfolio';
 import { useAssessments } from '../../hooks/useAssessments';
 import { useQueryClient } from '@tanstack/react-query';
@@ -17,10 +18,10 @@ export function DashboardPage() {
   const [sort, setSort] = useState('date');
   const [order, setOrder] = useState('desc');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showWeightsModal, setShowWeightsModal] = useState(false);
 
   const stats = useDashboardStats();
   const riskDist = useRiskDistribution();
-  const domainBreakdown = useDomainBreakdown();
   const sectorBreakdown = useSectorBreakdown();
   const queryClient = useQueryClient();
   const portfolio = usePortfolio();
@@ -54,6 +55,7 @@ export function DashboardPage() {
     let cmp = 0;
     if (sort === 'name') cmp = a.company_name.localeCompare(b.company_name);
     else if (sort === 'score') cmp = (a.composite_score || 0) - (b.composite_score || 0);
+    else if (sort === 'weight') cmp = (a.weight || 0) - (b.weight || 0);
     else cmp = a.updated_at.localeCompare(b.updated_at);
     return order === 'asc' ? cmp : -cmp;
   });
@@ -70,7 +72,6 @@ export function DashboardPage() {
 
             <div className="charts-grid">
               {riskDist.data && <RiskDonutChart data={riskDist.data} />}
-              {domainBreakdown.data && <DomainBreakdownChart data={domainBreakdown.data} />}
               {sectorBreakdown.data && <SectorBreakdownChart data={sectorBreakdown.data} />}
             </div>
 
@@ -95,9 +96,8 @@ export function DashboardPage() {
                 order={order}
                 onSort={handleSort}
                 onRemove={(id) => removeFromPortfolio.mutate(id)}
-                onSaveWeights={(weights) => updateWeights.mutate(weights)}
                 onAddCompanies={() => setShowAddModal(true)}
-                isSavingWeights={updateWeights.isPending}
+                onEditWeights={() => setShowWeightsModal(true)}
               />
             )}
           </>
@@ -119,6 +119,19 @@ export function DashboardPage() {
             setShowAddModal(false);
           }}
           onClose={() => setShowAddModal(false)}
+        />
+      )}
+
+      {showWeightsModal && portfolio.data && (
+        <EditWeightsModal
+          entries={portfolio.data}
+          saving={updateWeights.isPending}
+          onSave={(weights) => {
+            updateWeights.mutate(weights, {
+              onSuccess: () => setShowWeightsModal(false),
+            });
+          }}
+          onClose={() => setShowWeightsModal(false)}
         />
       )}
     </>

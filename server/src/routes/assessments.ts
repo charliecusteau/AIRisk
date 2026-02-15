@@ -25,14 +25,15 @@ const updateNotesSchema = z.object({
 // List assessments with optional filters
 router.get('/', (req: Request, res: Response) => {
   const { status, sector, sort, order, search } = req.query;
+  const userId = req.session.userId;
 
   let query = `
     SELECT a.*, c.name as company_name, c.sector as company_sector
     FROM assessments a
     JOIN companies c ON a.company_id = c.id
-    WHERE 1=1
+    WHERE a.user_id = ?
   `;
-  const params: unknown[] = [];
+  const params: unknown[] = [userId];
 
   if (status && status !== 'all') {
     query += ' AND a.status = ?';
@@ -61,13 +62,14 @@ router.get('/', (req: Request, res: Response) => {
 // Get single assessment with domain scores
 router.get('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
+  const userId = req.session.userId;
 
   const assessment = get(`
     SELECT a.*, c.name as company_name, c.sector as company_sector, c.description as company_description
     FROM assessments a
     JOIN companies c ON a.company_id = c.id
-    WHERE a.id = ?
-  `, id);
+    WHERE a.id = ? AND a.user_id = ?
+  `, id, userId);
 
   if (!assessment) {
     res.status(404).json({ error: 'Assessment not found' });
@@ -90,6 +92,7 @@ router.get('/:id', (req: Request, res: Response) => {
 // Create assessment (company + pending assessment)
 router.post('/', (req: Request, res: Response) => {
   const data = createAssessmentSchema.parse(req.body);
+  const userId = req.session.userId;
 
   const result = transaction(() => {
     let company = get<{ id: number }>('SELECT id FROM companies WHERE name = ?', data.company_name);
@@ -105,8 +108,8 @@ router.post('/', (req: Request, res: Response) => {
     }
 
     const assessmentResult = run(
-      "INSERT INTO assessments (company_id, status) VALUES (?, 'pending')",
-      company.id,
+      "INSERT INTO assessments (company_id, status, user_id) VALUES (?, 'pending', ?)",
+      company.id, userId,
     );
     const assessmentId = assessmentResult.lastInsertRowid;
 
@@ -122,7 +125,15 @@ router.post('/', (req: Request, res: Response) => {
 // Update a domain score (user override)
 router.patch('/:id/scores/:scoreId', (req: Request, res: Response) => {
   const { id, scoreId } = req.params;
+  const userId = req.session.userId;
   const data = updateScoreSchema.parse(req.body);
+
+  // Verify ownership
+  const assessment = get('SELECT id FROM assessments WHERE id = ? AND user_id = ?', id, userId);
+  if (!assessment) {
+    res.status(404).json({ error: 'Assessment not found' });
+    return;
+  }
 
   const score = get<DomainScore>('SELECT * FROM domain_scores WHERE id = ? AND assessment_id = ?', scoreId, id);
   if (!score) {
@@ -165,7 +176,14 @@ router.patch('/:id/scores/:scoreId', (req: Request, res: Response) => {
 // Update assessment notes
 router.patch('/:id/notes', (req: Request, res: Response) => {
   const { id } = req.params;
+  const userId = req.session.userId;
   const data = updateNotesSchema.parse(req.body);
+
+  const assessment = get('SELECT id FROM assessments WHERE id = ? AND user_id = ?', id, userId);
+  if (!assessment) {
+    res.status(404).json({ error: 'Assessment not found' });
+    return;
+  }
 
   run('UPDATE assessments SET notes = ?, updated_at = datetime(\'now\') WHERE id = ?', data.notes, id);
   run(
@@ -179,8 +197,9 @@ router.patch('/:id/notes', (req: Request, res: Response) => {
 // Delete assessment
 router.delete('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
+  const userId = req.session.userId;
 
-  const assessment = get('SELECT id FROM assessments WHERE id = ?', id);
+  const assessment = get('SELECT id FROM assessments WHERE id = ? AND user_id = ?', id, userId);
   if (!assessment) {
     res.status(404).json({ error: 'Assessment not found' });
     return;

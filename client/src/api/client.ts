@@ -1,9 +1,50 @@
 import axios from 'axios';
-import type { Assessment, DashboardStats, RiskDistribution, DomainBreakdown, SectorBreakdown, AssessmentHistory, PortfolioEntry } from '../types';
+import type { Assessment, DashboardStats, RiskDistribution, DomainBreakdown, SectorBreakdown, AssessmentHistory, PortfolioEntry, NewsAlert, NewsStatus, User } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
+  withCredentials: true,
 });
+
+// 401 interceptor — redirect to login on auth failure
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response?.status === 401 && !err.config.url?.includes('/auth/')) {
+      window.location.reload();
+    }
+    return Promise.reject(err);
+  },
+);
+
+// Auth
+export async function login(username: string, password: string): Promise<User> {
+  const { data } = await api.post('/auth/login', { username, password });
+  return data;
+}
+
+export async function logout(): Promise<void> {
+  await api.post('/auth/logout');
+}
+
+export async function getMe(): Promise<User> {
+  const { data } = await api.get('/auth/me');
+  return data;
+}
+
+export async function createUser(name: string, username: string, password: string): Promise<User> {
+  const { data } = await api.post('/auth/users', { name, username, password });
+  return data;
+}
+
+export async function listUsers(): Promise<User[]> {
+  const { data } = await api.get('/auth/users');
+  return data;
+}
+
+export async function deleteUser(id: number): Promise<void> {
+  await api.delete(`/auth/users/${id}`);
+}
 
 // Assessments
 export async function listAssessments(params?: {
@@ -210,4 +251,63 @@ export async function getAssessmentHistory(assessmentId: number): Promise<Assess
 // Export
 export function getExportUrl(assessmentId: number): string {
   return `/api/export/${assessmentId}/pdf`;
+}
+
+// News
+export async function getNewsAlerts(minRelevance?: number): Promise<NewsAlert[]> {
+  const params = minRelevance ? { min_relevance: minRelevance } : undefined;
+  const { data } = await api.get('/news', { params });
+  return data;
+}
+
+export async function getNewsStatus(): Promise<NewsStatus> {
+  const { data } = await api.get('/news/status');
+  return data;
+}
+
+export function scanNews(
+  onProgress: (msg: string) => void,
+  onComplete: (data: { alert_count: number }) => void,
+  onError: (msg: string) => void,
+): () => void {
+  const controller = new AbortController();
+
+  fetch('/api/news/scan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal: controller.signal,
+  }).then(async (response) => {
+    const reader = response.body?.getReader();
+    if (!reader) { onError('No response body'); return; }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      let event = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          event = line.slice(7);
+        } else if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (event === 'progress') onProgress(data.message);
+            else if (event === 'complete') onComplete(data);
+            else if (event === 'error') onError(data.message);
+          } catch {}
+        }
+      }
+    }
+  }).catch((err) => {
+    if (err.name !== 'AbortError') onError(err.message);
+  });
+
+  return () => controller.abort();
 }

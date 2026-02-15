@@ -9,7 +9,9 @@ import { logger } from '../utils/logger';
 const router = Router();
 
 // GET /api/portfolio - List all portfolio entries with assessment + company data
-router.get('/', (_req: Request, res: Response) => {
+router.get('/', (req: Request, res: Response) => {
+  const userId = req.session.userId;
+
   const entries = all(`
     SELECT
       p.id, p.assessment_id, p.weight, p.added_at,
@@ -20,14 +22,15 @@ router.get('/', (_req: Request, res: Response) => {
     FROM portfolio p
     JOIN assessments a ON p.assessment_id = a.id
     JOIN companies c ON a.company_id = c.id
-    WHERE a.status = 'completed'
+    WHERE a.status = 'completed' AND p.user_id = ?
     ORDER BY p.added_at DESC
-  `);
+  `, userId);
   res.json(entries);
 });
 
 // POST /api/portfolio - Add existing assessment(s) to portfolio (instant, no analysis)
 router.post('/', (req: Request, res: Response) => {
+  const userId = req.session.userId;
   const { assessment_ids } = req.body;
   if (!Array.isArray(assessment_ids) || assessment_ids.length === 0) {
     res.status(400).json({ error: 'assessment_ids must be a non-empty array' });
@@ -36,12 +39,15 @@ router.post('/', (req: Request, res: Response) => {
 
   transaction(() => {
     for (const aid of assessment_ids) {
-      const existing = get('SELECT id FROM portfolio WHERE assessment_id = ?', aid);
+      // Verify user owns the assessment
+      const owns = get('SELECT id FROM assessments WHERE id = ? AND user_id = ?', aid, userId);
+      if (!owns) continue;
+      const existing = get('SELECT id FROM portfolio WHERE assessment_id = ? AND user_id = ?', aid, userId);
       if (!existing) {
-        run('INSERT INTO portfolio (assessment_id, weight) VALUES (?, 0)', aid);
+        run('INSERT INTO portfolio (assessment_id, weight, user_id) VALUES (?, 0, ?)', aid, userId);
       }
     }
-    redistributeWeights();
+    redistributeWeights(userId!);
   });
 
   const entries = all(`
@@ -54,19 +60,20 @@ router.post('/', (req: Request, res: Response) => {
     FROM portfolio p
     JOIN assessments a ON p.assessment_id = a.id
     JOIN companies c ON a.company_id = c.id
-    WHERE a.status = 'completed'
+    WHERE a.status = 'completed' AND p.user_id = ?
     ORDER BY p.added_at DESC
-  `);
+  `, userId);
   res.json(entries);
 });
 
 // POST /api/portfolio/batch-add — Add existing assessments + analyze new companies via SSE
 router.post('/batch-add', async (req: Request, res: Response) => {
+  const userId = req.session.userId!;
   const { assessment_ids = [], new_companies = [], sector } = req.body;
 
   const existingIds: number[] = Array.isArray(assessment_ids) ? assessment_ids : [];
   const companies: string[] = Array.isArray(new_companies)
-    ? [...new Set(new_companies.map((c: string) => c.trim()).filter(Boolean))].slice(0, 50)
+    ? [...new Set(new_companies.map((c: string) => c.trim()).filter(Boolean))].slice(0, 75)
     : [];
 
   if (existingIds.length === 0 && companies.length === 0) {
@@ -89,9 +96,11 @@ router.post('/batch-add', async (req: Request, res: Response) => {
   if (existingIds.length > 0) {
     transaction(() => {
       for (const aid of existingIds) {
-        const existing = get('SELECT id FROM portfolio WHERE assessment_id = ?', aid);
+        const owns = get('SELECT id FROM assessments WHERE id = ? AND user_id = ?', aid, userId);
+        if (!owns) continue;
+        const existing = get('SELECT id FROM portfolio WHERE assessment_id = ? AND user_id = ?', aid, userId);
         if (!existing) {
-          run('INSERT INTO portfolio (assessment_id, weight) VALUES (?, 0)', aid);
+          run('INSERT INTO portfolio (assessment_id, weight, user_id) VALUES (?, 0, ?)', aid, userId);
         }
       }
     });
@@ -121,10 +130,10 @@ router.post('/batch-add', async (req: Request, res: Response) => {
         run("UPDATE companies SET sector = ?, updated_at = datetime('now') WHERE id = ?", sector, company.id);
       }
 
-      // Check if there's already a completed assessment for this company
+      // Check if this user already has a completed assessment for this company
       const existingAssessment = get<{ id: number }>(
-        "SELECT id FROM assessments WHERE company_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1",
-        company.id,
+        "SELECT id FROM assessments WHERE company_id = ? AND user_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1",
+        company.id, userId,
       );
 
       let assessmentId: number;
@@ -135,8 +144,8 @@ router.post('/batch-add', async (req: Request, res: Response) => {
       } else {
         // Create assessment and run analysis
         const assessmentResult = run(
-          "INSERT INTO assessments (company_id, status) VALUES (?, 'analyzing')",
-          company.id,
+          "INSERT INTO assessments (company_id, status, user_id) VALUES (?, 'analyzing', ?)",
+          company.id, userId,
         );
         assessmentId = assessmentResult.lastInsertRowid;
         run("INSERT INTO assessment_history (assessment_id, action) VALUES (?, 'created')", assessmentId);
@@ -201,9 +210,9 @@ router.post('/batch-add', async (req: Request, res: Response) => {
       }
 
       // Add to portfolio
-      const alreadyInPortfolio = get('SELECT id FROM portfolio WHERE assessment_id = ?', assessmentId);
+      const alreadyInPortfolio = get('SELECT id FROM portfolio WHERE assessment_id = ? AND user_id = ?', assessmentId, userId);
       if (!alreadyInPortfolio) {
-        run('INSERT INTO portfolio (assessment_id, weight) VALUES (?, 0)', assessmentId);
+        run('INSERT INTO portfolio (assessment_id, weight, user_id) VALUES (?, 0, ?)', assessmentId, userId);
       }
 
       sendEvent('company_complete', { index: i, company_name: companyName, assessment_id: assessmentId });
@@ -216,7 +225,7 @@ router.post('/batch-add', async (req: Request, res: Response) => {
 
   // Redistribute weights across entire portfolio
   transaction(() => {
-    redistributeWeights();
+    redistributeWeights(userId);
   });
 
   sendEvent('complete', { success: true });
@@ -226,10 +235,18 @@ router.post('/batch-add', async (req: Request, res: Response) => {
 // DELETE /api/portfolio/:id - Remove entry from portfolio
 router.delete('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
+  const userId = req.session.userId!;
+
+  // Verify ownership
+  const entry = get('SELECT id FROM portfolio WHERE id = ? AND user_id = ?', Number(id), userId);
+  if (!entry) {
+    res.status(404).json({ error: 'Portfolio entry not found' });
+    return;
+  }
 
   transaction(() => {
     run('DELETE FROM portfolio WHERE id = ?', Number(id));
-    redistributeWeights();
+    redistributeWeights(userId);
   });
 
   res.json({ success: true });
@@ -237,6 +254,7 @@ router.delete('/:id', (req: Request, res: Response) => {
 
 // PUT /api/portfolio/weights - Update all weights
 router.put('/weights', (req: Request, res: Response) => {
+  const userId = req.session.userId;
   const { weights } = req.body;
   if (!Array.isArray(weights)) {
     res.status(400).json({ error: 'weights must be an array of { id, weight }' });
@@ -251,21 +269,21 @@ router.put('/weights', (req: Request, res: Response) => {
 
   transaction(() => {
     for (const { id, weight } of weights) {
-      run('UPDATE portfolio SET weight = ? WHERE id = ?', weight, id);
+      run('UPDATE portfolio SET weight = ? WHERE id = ? AND user_id = ?', weight, id, userId);
     }
   });
 
   res.json({ success: true });
 });
 
-function redistributeWeights() {
-  const count = get<any>('SELECT COUNT(*) as count FROM portfolio')?.count || 0;
+function redistributeWeights(userId: number) {
+  const count = get<any>('SELECT COUNT(*) as count FROM portfolio WHERE user_id = ?', userId)?.count || 0;
   if (count === 0) return;
   const equalWeight = Math.round((100 / count) * 100) / 100;
-  run('UPDATE portfolio SET weight = ?', equalWeight);
+  run('UPDATE portfolio SET weight = ? WHERE user_id = ?', equalWeight, userId);
   const remainder = 100 - equalWeight * count;
   if (Math.abs(remainder) > 0.001) {
-    const first = get<any>('SELECT id FROM portfolio ORDER BY id LIMIT 1');
+    const first = get<any>('SELECT id FROM portfolio WHERE user_id = ? ORDER BY id LIMIT 1', userId);
     if (first) {
       run('UPDATE portfolio SET weight = ? WHERE id = ?', equalWeight + remainder, first.id);
     }

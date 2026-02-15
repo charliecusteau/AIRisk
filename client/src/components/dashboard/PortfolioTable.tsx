@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowUpDown, Eye, Trash2, Save, Plus } from 'lucide-react';
+import { ArrowUpDown, Eye, Trash2, Plus, Settings2 } from 'lucide-react';
 import { RiskBadge } from '../common/RiskBadge';
 import { ScoreDisplay } from '../common/ScoreDisplay';
 import type { PortfolioEntry } from '../../types';
@@ -11,38 +11,12 @@ interface Props {
   order: string;
   onSort: (field: string) => void;
   onRemove: (id: number) => void;
-  onSaveWeights: (weights: { id: number; weight: number }[]) => void;
   onAddCompanies: () => void;
-  isSavingWeights: boolean;
+  onEditWeights: () => void;
 }
 
-export function PortfolioTable({ entries, sort, order, onSort, onRemove, onSaveWeights, onAddCompanies, isSavingWeights }: Props) {
+export function PortfolioTable({ entries, sort, order, onSort, onRemove, onAddCompanies, onEditWeights }: Props) {
   const navigate = useNavigate();
-  const [editedWeights, setEditedWeights] = useState<Record<number, string>>({});
-  const [hasEdits, setHasEdits] = useState(false);
-
-  useEffect(() => {
-    const initial: Record<number, string> = {};
-    entries.forEach(e => { initial[e.id] = String(e.weight); });
-    setEditedWeights(initial);
-    setHasEdits(false);
-  }, [entries]);
-
-  const handleWeightChange = (id: number, value: string) => {
-    setEditedWeights(prev => ({ ...prev, [id]: value }));
-    setHasEdits(true);
-  };
-
-  const totalWeight = Object.values(editedWeights).reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
-  const weightValid = Math.abs(totalWeight - 100) < 0.1;
-
-  const handleSave = () => {
-    const weights = Object.entries(editedWeights).map(([id, w]) => ({
-      id: Number(id),
-      weight: parseFloat(w) || 0,
-    }));
-    onSaveWeights(weights);
-  };
 
   const SortHeader = ({ field, children }: { field: string; children: React.ReactNode }) => (
     <th onClick={() => onSort(field)} style={{ cursor: 'pointer' }}>
@@ -68,17 +42,10 @@ export function PortfolioTable({ entries, sort, order, onSort, onRemove, onSaveW
 
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 13, color: weightValid ? 'var(--text-secondary)' : 'var(--risk-high)' }}>
-            Total: {totalWeight.toFixed(1)}%{!weightValid && ' (must = 100%)'}
-          </span>
-          {hasEdits && (
-            <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={!weightValid || isSavingWeights}>
-              <Save size={12} /> Save Weights
-            </button>
-          )}
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+        <button className="btn btn-secondary btn-sm" onClick={onEditWeights}>
+          <Settings2 size={14} /> Edit Weights
+        </button>
         <button className="btn btn-secondary btn-sm" onClick={onAddCompanies}>
           <Plus size={14} /> Add Companies
         </button>
@@ -89,13 +56,13 @@ export function PortfolioTable({ entries, sort, order, onSort, onRemove, onSaveW
             <tr>
               <SortHeader field="name">Company</SortHeader>
               <th>Sector</th>
-              <th>Weight %</th>
+              <SortHeader field="weight">Weight</SortHeader>
               <SortHeader field="score">Score</SortHeader>
               <th>Rating</th>
-              <th>D1</th>
-              <th>D2</th>
-              <th>D3</th>
-              <th>D4</th>
+              <th>Demand</th>
+              <th>Moat</th>
+              <th>Tech</th>
+              <th>AI Comp.</th>
               <SortHeader field="date">Date</SortHeader>
               <th></th>
             </tr>
@@ -110,20 +77,9 @@ export function PortfolioTable({ entries, sort, order, onSort, onRemove, onSaveW
                   {e.company_name}
                 </td>
                 <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{e.company_sector || '-'}</td>
-                <td>
-                  <input
-                    type="number"
-                    className="form-input"
-                    style={{ width: 70, padding: '4px 6px', fontSize: 12, textAlign: 'right' }}
-                    value={editedWeights[e.id] ?? ''}
-                    onChange={ev => handleWeightChange(e.id, ev.target.value)}
-                    min={0}
-                    max={100}
-                    step={0.1}
-                  />
-                </td>
+                <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{e.weight.toFixed(1)}%</td>
                 <td><ScoreDisplay score={e.composite_score} size="sm" /></td>
-                <td><RiskBadge rating={e.composite_rating?.split(' ')[0].toLowerCase() || null} size="sm" /></td>
+                <td><RiskBadge rating={e.composite_rating || null} size="sm" /></td>
                 <td><RiskBadge rating={e.domain1_rating} size="sm" /></td>
                 <td><RiskBadge rating={e.domain2_rating} size="sm" /></td>
                 <td><RiskBadge rating={e.domain3_rating} size="sm" /></td>

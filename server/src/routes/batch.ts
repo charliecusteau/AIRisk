@@ -26,6 +26,7 @@ interface BatchCompanyResult {
 // POST /api/batch-analysis — analyze multiple companies via SSE
 router.post('/', async (req: Request, res: Response) => {
   const { companies, sector } = batchSchema.parse(req.body);
+  const userId = req.session.userId!;
 
   // Deduplicate and trim
   const uniqueCompanies = [...new Set(companies.map(c => c.trim()).filter(Boolean))];
@@ -65,8 +66,8 @@ router.post('/', async (req: Request, res: Response) => {
       }
 
       const assessmentResult = run(
-        "INSERT INTO assessments (company_id, status) VALUES (?, 'analyzing')",
-        company.id,
+        "INSERT INTO assessments (company_id, status, user_id) VALUES (?, 'analyzing', ?)",
+        company.id, userId,
       );
       const assessmentId = assessmentResult.lastInsertRowid;
       run("INSERT INTO assessment_history (assessment_id, action) VALUES (?, 'created')", assessmentId);
