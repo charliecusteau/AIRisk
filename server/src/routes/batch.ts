@@ -72,7 +72,65 @@ router.post('/', async (req: Request, res: Response) => {
       const assessmentId = assessmentResult.lastInsertRowid;
       run("INSERT INTO assessment_history (assessment_id, action) VALUES (?, 'created')", assessmentId);
 
-      // Run analysis (same logic as analysis.ts)
+      // Check if a completed assessment already exists for this company (any user)
+      const existing = get<any>(`
+        SELECT a.* FROM assessments a
+        WHERE a.company_id = ? AND a.status = 'completed'
+        ORDER BY a.updated_at DESC LIMIT 1
+      `, company.id);
+
+      if (existing) {
+        // Clone existing analysis — no AI call needed
+        sendEvent('progress', { index: i, company_name: companyName, message: 'Found existing analysis — cloning...' });
+
+        const existingScores = all<DomainScore>(
+          'SELECT * FROM domain_scores WHERE assessment_id = ? ORDER BY domain_number, question_key',
+          existing.id,
+        );
+        for (const s of existingScores) {
+          run(
+            `INSERT INTO domain_scores (assessment_id, domain_number, question_key, question_text, ai_rating, ai_reasoning, ai_confidence, effective_rating)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            assessmentId, s.domain_number, s.question_key, s.question_text,
+            s.ai_rating, s.ai_reasoning, s.ai_confidence, s.ai_rating,
+          );
+        }
+
+        run(
+          `UPDATE assessments
+           SET status = 'completed', narrative = ?,
+               domain1_rating = ?, domain2_rating = ?, domain3_rating = ?, domain4_rating = ?, domain5_rating = ?,
+               composite_score = ?, composite_rating = ?, ai_model = ?,
+               domain_summaries = ?,
+               updated_at = datetime('now')
+           WHERE id = ?`,
+          existing.narrative,
+          existing.domain1_rating, existing.domain2_rating, existing.domain3_rating,
+          existing.domain4_rating, existing.domain5_rating,
+          existing.composite_score, existing.composite_rating, existing.ai_model,
+          existing.domain_summaries,
+          assessmentId,
+        );
+
+        run(
+          "INSERT INTO assessment_history (assessment_id, action, new_value) VALUES (?, 'analysis_cloned', ?)",
+          assessmentId, `Cloned from assessment #${existing.id}`,
+        );
+
+        const companyResult: BatchCompanyResult = {
+          company_name: companyName,
+          status: 'completed',
+          assessment_id: assessmentId as number,
+          composite_score: existing.composite_score,
+          composite_rating: existing.composite_rating,
+        };
+
+        results.push(companyResult);
+        sendEvent('company_complete', { index: i, ...companyResult });
+        continue;
+      }
+
+      // No existing analysis — run AI
       sendEvent('progress', { index: i, company_name: companyName, message: 'Calling Claude API...' });
 
       const result = await analyzeCompany(

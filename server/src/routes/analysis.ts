@@ -42,6 +42,65 @@ router.post('/', async (req: Request, res: Response) => {
   };
 
   try {
+    // Check if another completed assessment exists for this company (any user)
+    const existing = get<any>(`
+      SELECT a.* FROM assessments a
+      WHERE a.company_id = ? AND a.status = 'completed' AND a.id != ?
+      ORDER BY a.updated_at DESC LIMIT 1
+    `, assessment.company_id, assessment_id);
+
+    if (existing) {
+      sendEvent('progress', { message: 'Found existing analysis — cloning...', step: 1, totalSteps: 3 });
+
+      // Clone domain scores
+      const existingScores = all<DomainScore>(
+        'SELECT * FROM domain_scores WHERE assessment_id = ? ORDER BY domain_number, question_key',
+        existing.id,
+      );
+      run('DELETE FROM domain_scores WHERE assessment_id = ?', assessment_id);
+      for (const s of existingScores) {
+        run(
+          `INSERT INTO domain_scores (assessment_id, domain_number, question_key, question_text, ai_rating, ai_reasoning, ai_confidence, effective_rating)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          assessment_id, s.domain_number, s.question_key, s.question_text,
+          s.ai_rating, s.ai_reasoning, s.ai_confidence, s.ai_rating,
+        );
+      }
+
+      sendEvent('progress', { message: 'Saving results...', step: 2, totalSteps: 3 });
+
+      run(
+        `UPDATE assessments
+         SET status = 'completed', narrative = ?,
+             domain1_rating = ?, domain2_rating = ?, domain3_rating = ?, domain4_rating = ?, domain5_rating = ?,
+             composite_score = ?, composite_rating = ?, ai_model = ?,
+             domain_summaries = ?,
+             updated_at = datetime('now')
+         WHERE id = ?`,
+        existing.narrative,
+        existing.domain1_rating, existing.domain2_rating, existing.domain3_rating,
+        existing.domain4_rating, existing.domain5_rating,
+        existing.composite_score, existing.composite_rating, existing.ai_model,
+        existing.domain_summaries,
+        assessment_id,
+      );
+
+      run(
+        "INSERT INTO assessment_history (assessment_id, action, new_value) VALUES (?, 'analysis_cloned', ?)",
+        assessment_id, `Cloned from assessment #${existing.id}`,
+      );
+
+      sendEvent('progress', { message: 'Complete!', step: 3, totalSteps: 3 });
+      sendEvent('complete', {
+        assessment_id,
+        composite_score: existing.composite_score,
+        composite_rating: existing.composite_rating,
+      });
+      res.end();
+      return;
+    }
+
+    // No existing analysis — run AI
     // Update status to analyzing
     run("UPDATE assessments SET status = 'analyzing', updated_at = datetime('now') WHERE id = ?", assessment_id);
     sendEvent('progress', { message: 'Starting analysis...', step: 1, totalSteps: 5 });
