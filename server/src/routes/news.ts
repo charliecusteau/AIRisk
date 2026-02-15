@@ -83,6 +83,17 @@ router.post('/scan', async (req: Request, res: Response) => {
     userId,
   );
 
+  // Enforce minimum 1-hour cooldown between scans
+  if (lastScan?.scanned_at) {
+    const lastScanTime = new Date(lastScan.scanned_at + 'Z').getTime();
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    if (lastScanTime > oneHourAgo) {
+      const minutesLeft = Math.ceil((lastScanTime - oneHourAgo) / 60000);
+      res.status(429).json({ error: `Please wait ${minutesLeft} minute${minutesLeft !== 1 ? 's' : ''} before scanning again.` });
+      return;
+    }
+  }
+
   // Gather existing headlines to deduplicate (per user)
   const existingHeadlines = new Set(
     all<{ headline: string }>('SELECT headline FROM news_alerts WHERE user_id = ?', userId).map(r => r.headline.toLowerCase()),
@@ -144,7 +155,7 @@ INSTRUCTIONS:
 1. Use web search to find AI-related competitive news published since ${searchSince}.
 2. For each news item, determine which portfolio companies it impacts and why.
 3. Rate relevance 1-10 (10 = most impactful). Only include items with relevance >= 5.
-4. Be selective — quality over quantity. Max 20 alerts.
+4. Be selective — quality over quantity. Max 10 alerts.
 5. Return ONLY valid JSON, no markdown fences or commentary.
 
 Return this exact JSON structure:
@@ -175,9 +186,9 @@ Return this exact JSON structure:
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         response = await client.messages.create({
-          model: 'claude-sonnet-4-5-20250929',
-          max_tokens: 8000,
-          tools: [{ type: 'web_search_20250305' as any, name: 'web_search', max_uses: 10 } as any],
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 4000,
+          tools: [{ type: 'web_search_20250305' as any, name: 'web_search', max_uses: 5 } as any],
           system: systemPrompt,
           messages: [
             {
