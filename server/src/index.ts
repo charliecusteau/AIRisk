@@ -19,7 +19,6 @@ import assessmentRoutes from './routes/assessments';
 import analysisRoutes from './routes/analysis';
 import dashboardRoutes from './routes/dashboard';
 import exportRoutes from './routes/export';
-import batchRoutes from './routes/batch';
 import portfolioRoutes from './routes/portfolio';
 import newsRoutes from './routes/news';
 
@@ -65,7 +64,6 @@ async function main() {
   app.use('/api/analysis', analysisRoutes);
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/export', exportRoutes);
-  app.use('/api/batch-analysis', batchRoutes);
   app.use('/api/portfolio', portfolioRoutes);
   app.use('/api/news', newsRoutes);
 
