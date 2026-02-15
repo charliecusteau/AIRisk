@@ -1,12 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { Search, CheckCircle, XCircle, Loader } from 'lucide-react';
+import { CheckCircle, XCircle, Loader } from 'lucide-react';
 import { Modal } from '../common/Modal';
 import { batchAddToPortfolio } from '../../api/client';
-import type { Assessment } from '../../types';
 
 interface Props {
-  assessments: Assessment[];
-  portfolioAssessmentIds: Set<number>;
   onComplete: () => void;
   onClose: () => void;
 }
@@ -17,9 +14,7 @@ interface CompanyProgress {
   message: string;
 }
 
-export function AddToPortfolioModal({ assessments, portfolioAssessmentIds, onComplete, onClose }: Props) {
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [search, setSearch] = useState('');
+export function AddToPortfolioModal({ onComplete, onClose }: Props) {
   const [newCompanies, setNewCompanies] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState<CompanyProgress[]>([]);
@@ -27,28 +22,11 @@ export function AddToPortfolioModal({ assessments, portfolioAssessmentIds, onCom
   const [totalCount, setTotalCount] = useState(0);
   const abortRef = useRef<(() => void) | null>(null);
 
-  const available = assessments.filter(
-    a => a.status === 'completed' && !portfolioAssessmentIds.has(a.id)
-  );
-
-  const filtered = available.filter(
-    a => a.company_name.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const toggle = (id: number) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   const parseNewCompanies = () =>
     newCompanies.split('\n').map(s => s.trim()).filter(Boolean);
 
   const newList = parseNewCompanies();
-  const totalToAdd = selected.size + newList.length;
+  const totalToAdd = newList.length;
 
   const handleAdd = () => {
     if (totalToAdd === 0) return;
@@ -65,7 +43,7 @@ export function AddToPortfolioModal({ assessments, portfolioAssessmentIds, onCom
 
     const abort = batchAddToPortfolio(
       {
-        assessment_ids: Array.from(selected),
+        assessment_ids: [],
         new_companies: newList,
       },
       {
@@ -122,12 +100,6 @@ export function AddToPortfolioModal({ assessments, portfolioAssessmentIds, onCom
     return (
       <Modal title="Adding Companies to Portfolio" onClose={handleClose}>
         <div style={{ padding: '0 20px 20px' }}>
-          {selected.size > 0 && (
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
-              {selected.size} existing assessment(s) added.
-            </p>
-          )}
-
           {progress.length > 0 && (
             <>
               <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
@@ -188,52 +160,6 @@ export function AddToPortfolioModal({ assessments, portfolioAssessmentIds, onCom
             </div>
           )}
         </div>
-
-        {/* Divider */}
-        {available.length > 0 && (
-          <>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-heading)', marginBottom: 6 }}>
-              Or select from existing reviews
-            </div>
-            <div style={{ position: 'relative', marginBottom: 12 }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-              <input
-                className="form-input"
-                style={{ paddingLeft: 32, width: '100%' }}
-                placeholder="Search existing reviews..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
-            </div>
-
-            {filtered.length === 0 ? (
-              <p style={{ color: 'var(--text-secondary)', fontSize: 13, textAlign: 'center', padding: 12 }}>
-                No matches found.
-              </p>
-            ) : (
-              <div style={{ maxHeight: 200, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
-                {filtered.map(a => (
-                  <label
-                    key={a.id}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px',
-                      cursor: 'pointer', borderBottom: '1px solid var(--border)',
-                      background: selected.has(a.id) ? 'var(--bg-hover)' : 'transparent',
-                    }}
-                  >
-                    <input type="checkbox" checked={selected.has(a.id)} onChange={() => toggle(a.id)} />
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{a.company_name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                        {a.company_sector || 'No sector'} &middot; Score: {a.composite_score ?? '-'}
-                      </div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            )}
-          </>
-        )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>

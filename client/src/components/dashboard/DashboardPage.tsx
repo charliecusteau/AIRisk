@@ -9,7 +9,6 @@ import { FilterBar } from './FilterBar';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { useDashboardStats, useRiskDistribution, useSectorBreakdown } from '../../hooks/useDashboard';
 import { usePortfolio, useRemoveFromPortfolio, useUpdatePortfolioWeights } from '../../hooks/usePortfolio';
-import { useAssessments } from '../../hooks/useAssessments';
 import { useQueryClient } from '@tanstack/react-query';
 
 export function DashboardPage() {
@@ -25,7 +24,6 @@ export function DashboardPage() {
   const sectorBreakdown = useSectorBreakdown();
   const queryClient = useQueryClient();
   const portfolio = usePortfolio();
-  const allAssessments = useAssessments({});
   const removeFromPortfolio = useRemoveFromPortfolio();
   const updateWeights = useUpdatePortfolioWeights();
 
@@ -37,8 +35,6 @@ export function DashboardPage() {
       setOrder('desc');
     }
   };
-
-  const portfolioAssessmentIds = new Set((portfolio.data || []).map(e => e.assessment_id));
 
   // Filter portfolio entries client-side by search/sector
   let filteredEntries = portfolio.data || [];
@@ -110,8 +106,6 @@ export function DashboardPage() {
 
       {showAddModal && (
         <AddToPortfolioModal
-          assessments={allAssessments.data || []}
-          portfolioAssessmentIds={portfolioAssessmentIds}
           onComplete={() => {
             queryClient.invalidateQueries({ queryKey: ['portfolio'] });
             queryClient.invalidateQueries({ queryKey: ['dashboard'] });
