@@ -131,18 +131,18 @@ router.post('/batch-add', async (req: Request, res: Response) => {
       }
 
       // Check if this user already has a completed assessment for this company
-      const existingAssessment = get<{ id: number }>(
+      const ownAssessment = get<{ id: number }>(
         "SELECT id FROM assessments WHERE company_id = ? AND user_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1",
         company.id, userId,
       );
 
       let assessmentId: number;
 
-      if (existingAssessment) {
-        assessmentId = existingAssessment.id;
+      if (ownAssessment) {
+        assessmentId = ownAssessment.id;
         sendEvent('progress', { index: i, company_name: companyName, message: 'Already analyzed — adding to portfolio' });
       } else {
-        // Create assessment and run analysis
+        // Create assessment for this user
         const assessmentResult = run(
           "INSERT INTO assessments (company_id, status, user_id) VALUES (?, 'analyzing', ?)",
           company.id, userId,
@@ -150,63 +150,110 @@ router.post('/batch-add', async (req: Request, res: Response) => {
         assessmentId = assessmentResult.lastInsertRowid;
         run("INSERT INTO assessment_history (assessment_id, action) VALUES (?, 'created')", assessmentId);
 
-        sendEvent('progress', { index: i, company_name: companyName, message: 'Calling Claude API...' });
+        // Check if ANY user has a completed assessment for this company (clone it)
+        const donorAssessment = get<any>(`
+          SELECT a.* FROM assessments a
+          WHERE a.company_id = ? AND a.status = 'completed' AND a.id != ?
+          ORDER BY a.updated_at DESC LIMIT 1
+        `, company.id, assessmentId);
 
-        const result = await analyzeCompany(
-          companyName,
-          sector || undefined,
-          undefined,
-          (message) => sendEvent('progress', { index: i, company_name: companyName, message }),
-        );
+        if (donorAssessment) {
+          // Clone existing analysis — no AI call needed
+          sendEvent('progress', { index: i, company_name: companyName, message: 'Found existing analysis — cloning...' });
 
-        if (result.sector) {
-          run("UPDATE companies SET sector = ?, updated_at = datetime('now') WHERE id = ?",
-            result.sector, company.id);
-        }
-
-        run('DELETE FROM domain_scores WHERE assessment_id = ?', assessmentId);
-
-        for (const domain of result.domains) {
-          for (const q of domain.questions) {
-            const questionDef = DOMAINS.find(d => d.number === domain.domain_number)
-              ?.questions.find(qd => qd.key === q.question_key);
+          const donorScores = all<DomainScore>(
+            'SELECT * FROM domain_scores WHERE assessment_id = ? ORDER BY domain_number, question_key',
+            donorAssessment.id,
+          );
+          for (const s of donorScores) {
             run(
               `INSERT INTO domain_scores (assessment_id, domain_number, question_key, question_text, ai_rating, ai_reasoning, ai_confidence, effective_rating)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-              assessmentId, domain.domain_number, q.question_key,
-              questionDef?.text || q.question_key, q.rating, q.reasoning, q.confidence, q.rating,
+              assessmentId, s.domain_number, s.question_key, s.question_text,
+              s.ai_rating, s.ai_reasoning, s.ai_confidence, s.ai_rating,
             );
           }
+
+          run(
+            `UPDATE assessments
+             SET status = 'completed', narrative = ?,
+                 domain1_rating = ?, domain2_rating = ?, domain3_rating = ?, domain4_rating = ?, domain5_rating = ?,
+                 composite_score = ?, composite_rating = ?, ai_model = ?,
+                 domain_summaries = ?,
+                 updated_at = datetime('now')
+             WHERE id = ?`,
+            donorAssessment.narrative,
+            donorAssessment.domain1_rating, donorAssessment.domain2_rating, donorAssessment.domain3_rating,
+            donorAssessment.domain4_rating, donorAssessment.domain5_rating,
+            donorAssessment.composite_score, donorAssessment.composite_rating, donorAssessment.ai_model,
+            donorAssessment.domain_summaries,
+            assessmentId,
+          );
+
+          run(
+            "INSERT INTO assessment_history (assessment_id, action, new_value) VALUES (?, 'analysis_cloned', ?)",
+            assessmentId, `Cloned from assessment #${donorAssessment.id}`,
+          );
+        } else {
+          // No existing analysis anywhere — run AI
+          sendEvent('progress', { index: i, company_name: companyName, message: 'Calling Claude API...' });
+
+          const result = await analyzeCompany(
+            companyName,
+            sector || undefined,
+            undefined,
+            (message) => sendEvent('progress', { index: i, company_name: companyName, message }),
+          );
+
+          if (result.sector) {
+            run("UPDATE companies SET sector = ?, updated_at = datetime('now') WHERE id = ?",
+              result.sector, company.id);
+          }
+
+          run('DELETE FROM domain_scores WHERE assessment_id = ?', assessmentId);
+
+          for (const domain of result.domains) {
+            for (const q of domain.questions) {
+              const questionDef = DOMAINS.find(d => d.number === domain.domain_number)
+                ?.questions.find(qd => qd.key === q.question_key);
+              run(
+                `INSERT INTO domain_scores (assessment_id, domain_number, question_key, question_text, ai_rating, ai_reasoning, ai_confidence, effective_rating)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                assessmentId, domain.domain_number, q.question_key,
+                questionDef?.text || q.question_key, q.rating, q.reasoning, q.confidence, q.rating,
+              );
+            }
+          }
+
+          const allScores = all<DomainScore>('SELECT * FROM domain_scores WHERE assessment_id = ?', assessmentId);
+          const { domainRatings, compositeScore, compositeRating } = recalculateAssessment(allScores);
+
+          const domainSummaries: Record<number, string> = {};
+          for (const domain of result.domains) {
+            domainSummaries[domain.domain_number] = domain.summary;
+          }
+
+          run(
+            `UPDATE assessments
+             SET status = 'completed', narrative = ?,
+                 domain1_rating = ?, domain2_rating = ?, domain3_rating = ?, domain4_rating = ?, domain5_rating = ?,
+                 composite_score = ?, composite_rating = ?, ai_model = ?,
+                 domain_summaries = ?,
+                 updated_at = datetime('now')
+             WHERE id = ?`,
+            result.narrative,
+            domainRatings[1] || null, domainRatings[2] || null, domainRatings[3] || null,
+            domainRatings[4] || null, null,
+            compositeScore, compositeRating, 'claude-sonnet-4-5-20250929',
+            JSON.stringify(domainSummaries),
+            assessmentId,
+          );
+
+          run(
+            "INSERT INTO assessment_history (assessment_id, action, new_value) VALUES (?, 'analysis_completed', ?)",
+            assessmentId, `Score: ${compositeScore}, Rating: ${compositeRating}`,
+          );
         }
-
-        const allScores = all<DomainScore>('SELECT * FROM domain_scores WHERE assessment_id = ?', assessmentId);
-        const { domainRatings, compositeScore, compositeRating } = recalculateAssessment(allScores);
-
-        const domainSummaries: Record<number, string> = {};
-        for (const domain of result.domains) {
-          domainSummaries[domain.domain_number] = domain.summary;
-        }
-
-        run(
-          `UPDATE assessments
-           SET status = 'completed', narrative = ?,
-               domain1_rating = ?, domain2_rating = ?, domain3_rating = ?, domain4_rating = ?, domain5_rating = ?,
-               composite_score = ?, composite_rating = ?, ai_model = ?,
-               domain_summaries = ?,
-               updated_at = datetime('now')
-           WHERE id = ?`,
-          result.narrative,
-          domainRatings[1] || null, domainRatings[2] || null, domainRatings[3] || null,
-          domainRatings[4] || null, null,
-          compositeScore, compositeRating, 'claude-sonnet-4-5-20250929',
-          JSON.stringify(domainSummaries),
-          assessmentId,
-        );
-
-        run(
-          "INSERT INTO assessment_history (assessment_id, action, new_value) VALUES (?, 'analysis_completed', ?)",
-          assessmentId, `Score: ${compositeScore}, Rating: ${compositeRating}`,
-        );
       }
 
       // Add to portfolio
