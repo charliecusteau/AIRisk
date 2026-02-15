@@ -3,7 +3,7 @@ import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
   ResponsiveContainer,
 } from 'recharts';
-import type { RiskDistribution, DomainBreakdown, SectorBreakdown } from '../../types';
+import type { RiskDistribution, SectorBreakdown } from '../../types';
 
 const RISK_COLORS: Record<string, string> = {
   'High Risk': '#ef4444',
@@ -23,6 +23,32 @@ const tooltipStyle = {
   },
 };
 
+function RiskTooltipContent({ active, payload }: any) {
+  if (!active || !payload?.[0]) return null;
+  const data = payload[0].payload;
+  return (
+    <div style={{
+      background: '#1a2234',
+      border: '1px solid #2a3a54',
+      borderRadius: 8,
+      padding: '10px 14px',
+      fontSize: 12,
+      color: '#e2e8f0',
+    }}>
+      <div style={{ fontWeight: 600, marginBottom: 4, color: RISK_COLORS[data.rating] || '#e2e8f0' }}>
+        {data.rating} ({data.count})
+      </div>
+      {data.companies?.length > 0 && (
+        <div style={{ color: '#e2e8f0' }}>
+          {data.companies.map((name: string) => (
+            <div key={name} style={{ padding: '1px 0' }}>{name}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function RiskDonutChart({ data }: { data: RiskDistribution[] }) {
   if (data.length === 0) return <div className="empty-state"><p>No data yet</p></div>;
 
@@ -40,41 +66,19 @@ export function RiskDonutChart({ data }: { data: RiskDistribution[] }) {
             paddingAngle={3}
             dataKey="count"
             nameKey="rating"
-            label={({ rating, count }) => `${rating}: ${count}`}
+            label={({ x, y, rating, count, textAnchor }) => (
+              <text x={x} y={y} textAnchor={textAnchor} fill="#e2e8f0" fontSize={11}>
+                {`${rating}: ${count}`}
+              </text>
+            )}
             labelLine={{ stroke: '#64748b' }}
           >
             {data.map((entry) => (
               <Cell key={entry.rating} fill={RISK_COLORS[entry.rating] || '#64748b'} />
             ))}
           </Pie>
-          <Tooltip {...tooltipStyle} />
+          <Tooltip content={<RiskTooltipContent />} />
         </PieChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-export function DomainBreakdownChart({ data }: { data: DomainBreakdown[] }) {
-  if (data.length === 0) return <div className="empty-state"><p>No data yet</p></div>;
-
-  const shortNames = data.map(d => ({
-    ...d,
-    domain: d.domain.length > 20 ? d.domain.substring(0, 18) + '...' : d.domain,
-  }));
-
-  return (
-    <div className="card">
-      <div className="card-title" style={{ marginBottom: 16 }}>Domain Risk Breakdown</div>
-      <ResponsiveContainer width="100%" height={260}>
-        <BarChart data={shortNames} layout="vertical" margin={{ left: 10, right: 20 }}>
-          <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} />
-          <YAxis type="category" dataKey="domain" width={130} tick={{ fill: '#94a3b8', fontSize: 11 }} />
-          <Tooltip {...tooltipStyle} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="high" stackId="a" fill="#ef4444" name="High" radius={[0, 0, 0, 0]} />
-          <Bar dataKey="medium" stackId="a" fill="#f59e0b" name="Medium" />
-          <Bar dataKey="low" stackId="a" fill="#22c55e" name="Low" radius={[0, 4, 4, 0]} />
-        </BarChart>
       </ResponsiveContainer>
     </div>
   );
